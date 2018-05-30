@@ -1,28 +1,9 @@
 #!/usr/bin/env python
+import argparse
 import os
 import sys
 from subprocess import Popen, PIPE
 import fcntl
-
-instructions = '''
-Usage: python reset_usb.py help : Show this help
-       sudo python reset_usb.py list : List all USB devices
-       sudo python reset_usb.py path /dev/bus/usb/XXX/YYY : Reset USB device using path /dev/bus/usb/XXX/YYY
-       sudo python reset_usb.py search "search terms" : Search for USB device using the search terms within the search string returned by list and reset matching device
-       sudo python reset_usb.py listpci : List all PCI USB devices
-       sudo python reset_usb.py pathpci /sys/bus/pci/drivers/.../XXXX:XX:XX.X : Reset PCI USB device using path
-       sudo python reset_usb.py searchpci "search terms" : Search for PCI USB device using the search terms within the search string returned by listpci and reset matching device       
-       '''
-
-
-if len(sys.argv) < 2:
-    print(instructions)
-    sys.exit(0)
-
-option = sys.argv[1].lower()
-if 'help' in option:
-    print(instructions)
-    sys.exit(0)
 
 
 def create_pci_list():
@@ -85,34 +66,6 @@ def create_usb_list():
     return device_list
 
 
-if 'listpci' in option:
-    pci_usb_list = create_pci_list()
-    for device in pci_usb_list:
-        print('path=%s' % device['path'])
-        print('    manufacturer=%s' % device['SVendor'])
-        print('    device=%s' % device['SDevice'])
-        print('    search string=%s %s' % (device['SVendor'], device['SDevice']))
-    sys.exit(0)
-
-if 'list' in option:
-    usb_list = create_usb_list()
-    for device in usb_list:
-        print('path=%s' % device['path'])
-        print('    description=%s' % device['description'])
-        print('    manufacturer=%s' % device['manufacturer'])
-        print('    device=%s' % device['device'])
-        print('    search string=%s %s %s' % (device['description'], device['manufacturer'], device['device']))
-    sys.exit(0)
-
-if len(sys.argv) < 3:
-    print(instructions)
-    sys.exit(0)
-
-option2 = sys.argv[2]
-
-print('Resetting device: %s' % option2)
-
-
 # echo -n "0000:39:00.0" | tee /sys/bus/pci/drivers/xhci_hcd/unbind;echo -n "0000:39:00.0" | tee /sys/bus/pci/drivers/xhci_hcd/bind
 def reset_pci_usb_device(dev_path):
     folder, slot = os.path.split(dev_path)
@@ -130,20 +83,6 @@ def reset_pci_usb_device(dev_path):
         sys.exit(-1)
 
 
-if 'pathpci' in option:
-    reset_pci_usb_device(option2)
-
-
-if 'searchpci' in option:
-    pci_usb_list = create_pci_list()
-    for device in pci_usb_list:
-        text = '%s %s' % (device['SVendor'], device['SDevice'])
-        if option2 in text:
-            reset_pci_usb_device(device['path'])
-    print('Failed to find device!')
-    sys.exit(-1)
-
-
 def reset_usb_device(dev_path):
     USBDEVFS_RESET = 21780
     try:
@@ -155,18 +94,54 @@ def reset_usb_device(dev_path):
         print('Failed to reset device! Error: %s' % ex)
         sys.exit(-1)
 
+def main():
+    parser = argparse.ArgumentParser(description='Reset USB device')
+    parser.add_argument('--list', action='store_true', help='List all USB devices')
+    parser.add_argument('--listpci', action='store_true', help='List all PCI USB devices')
+    parser.add_argument('--path', help='Reset USB device using path /dev/bus/usb/XXX/YYY')
+    parser.add_argument('--search', help='Search for USB device using the search terms within the search string returned by list and reset matching device')
+    parser.add_argument('--pathpci', help='Reset PCI USB device using path /sys/bus/pci/drivers/.../XXXX:XX:XX.X')
+    parser.add_argument('--searchpci', help='Search for PCI USB device using the search terms within the search string returned by listpci and reset matching device')
+    args = parser.parse_args()
 
-if 'path' in option:
-    reset_usb_device(option2)
+    if args.listpci:
+        pci_usb_list = create_pci_list()
+        for device in pci_usb_list:
+            print('path=%s' % device['path'])
+            print('    manufacturer=%s' % device['SVendor'])
+            print('    device=%s' % device['SDevice'])
+            print('    search string=%s %s' % (device['SVendor'], device['SDevice']))
+    elif args.list:
+        usb_list = create_usb_list()
+        for device in usb_list:
+            print('path=%s' % device['path'])
+            print('    description=%s' % device['description'])
+            print('    manufacturer=%s' % device['manufacturer'])
+            print('    device=%s' % device['device'])
+            print('    search string=%s %s %s' % (device['description'], device['manufacturer'], device['device']))
+    elif args.pathpci:
+        reset_pci_usb_device(args.pathpci)
+    elif args.searchpci:
+        pci_usb_list = create_pci_list()
+        for device in pci_usb_list:
+            text = '%s %s' % (device['SVendor'], device['SDevice'])
+            if args.searchpci in text:
+                reset_pci_usb_device(device['path'])
+        print('Failed to find device!')
+        sys.exit(-1)
+    elif args.path:
+        reset_usb_device(args.path)
+    elif args.search:
+        usb_list = create_usb_list()
+        for device in usb_list:
+            text = '%s %s %s' % (device['description'], device['manufacturer'], device['device'])
+            if args.search in text:
+                reset_usb_device(device['path'])
+        print('Failed to find device!')
+        sys.exit(-1)
+    else:
+        parser.print_help()
 
 
-if 'search' in option:
-    usb_list = create_usb_list()
-    for device in usb_list:
-        text = '%s %s %s' % (device['description'], device['manufacturer'], device['device'])
-        if option2 in text:
-            reset_usb_device(device['path'])
-    print('Failed to find device!')
-    sys.exit(-1)
-
-
+if __name__ == '__main__':
+    main()
